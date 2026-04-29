@@ -245,3 +245,73 @@ ggsave(
   height = 6,
   dpi = 300
 )
+
+# ======================================================
+# Normalizando os dados para América Latina e BRIC+ ----
+# ======================================================
+
+#Cria base de dados com os z-scores para América Latina
+
+df_latam_z <- df_latam %>%
+              group_by(country) %>%
+              mutate(z_score = as.numeric(scale(value))) %>%
+              ungroup()
+
+#Gera o gráfico para América Latina
+
+ggplot(df_latam_z, aes(x = month, y = z_score, color = country)) +
+  geom_line(alpha = 0.6) +
+  geom_hline(yintercept = c(-2, 2), linetype = "dashed") +
+  theme_minimal() +
+  labs(title = "Normalized shocks (z-scores) by country",
+       y = "Z-score", x = "Month")
+
+ggplot(df_latam_z, aes(x = month, y = country, fill = z_score)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red") +
+  theme_minimal() +
+  labs(title = "Synchronized shocks across countries",
+       fill = "Z-score")
+
+df_latam_sync <- df_latam_z %>%
+  group_by(month) %>%
+  summarise(n_shocks = sum(abs(z_score) > 2, na.rm = TRUE))
+
+ggplot(df_latam_sync, aes(x = month, y = n_shocks)) +
+  geom_col() +
+  theme_minimal() +
+  labs(title = "Number of countries in extreme shock",
+       y = "Count")
+
+#Cria base de dados com os z-scores para BRICS+
+
+df_brics_z <- df_brics %>%
+              group_by(country) %>%
+              mutate(z_score = as.numeric(scale(value))) %>%
+              ungroup()
+  
+#Gera o gráfico para BRICS+  
+
+ggplot(df_brics_z, aes(x = month, y = z_score, color = country)) +
+  geom_line(alpha = 0.6) +
+  geom_hline(yintercept = c(-2, 2), linetype = "dashed") +
+  theme_minimal() +
+  labs(title = "Normalized shocks (z-scores) by country",
+       y = "Z-score", x = "Month")
+
+ggplot(df_brics_z, aes(x = month, y = country, fill = z_score)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red") +
+  theme_minimal() +
+  labs(title = "Synchronized shocks across countries",
+       fill = "Z-score")
+
+df_brics_sync <- df_brics_z %>%
+  group_by(month) %>%
+  summarise(n_shocks = sum(abs(z_score) > 2, na.rm = TRUE))
+
+ggplot(df_brics_sync, aes(x = month, y = n_shocks)) +
+  geom_col() +
+  theme_minimal() +
+  labs(title = "Number of countries in extreme shock",
+       y = "Count")

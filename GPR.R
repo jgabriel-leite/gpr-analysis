@@ -2,7 +2,9 @@
 # Pacotes ----
 # =========================
 
-#Código para baixar os dados do Geopolitical Risk Indes e plotar alguns gráficos
+#Código para baixar os dados do Geopolitical Risk Indes e criar um indicador de 
+#exposição geopolítica para cada país com base na proximidade geográfica de cada
+#parceiro bilateral. Também conta com códigos para plotar alguns gráficos
 #explorando a correlação entre esse índice para os países da América Latina e
 #do BRICS+ com dados disponíveis nessa base.
 
@@ -13,18 +15,24 @@ if (!require(dplyr)) install.packages("dplyr")
 if (!require(tidyr)) install.packages("tidyr")
 if (!require(ggplot2)) install.packages("ggplot2")
 if (!require(reshape2)) install.packages("reshape2")
+if (!require(cepiigeodist)) install.packages("cepiigeodist")
+if (!require(lubridate)) install.packages("lubridate")
+if (!require(stringr)) install.packages("stringr")
 
 library(readxl)
 library(dplyr)
 library(tidyr)
 library(ggplot2)
 library(reshape2)
+library(cepiigeodist)
+library(lubridate)
+library(stringr)
 
 # =========================
 # Download ----
 # =========================
 
-#Cria local, salva e importa a base de dados e local apra salvar gráficos
+#Cria local, salva e importa a base de dados
 
 dir.create("data-raw", showWarnings = FALSE)
 
@@ -75,13 +83,162 @@ data_gpr_export <- read_excel("data-raw/data_gpr_export.xls",
                                             "numeric", "numeric", "text", "text"))
 
 
+#Ficar apenas com dados da média anual do GPR para os países da base e retira
+#observações antes de 1985, ano em que começa o índice não histórico do GPR
+
+data_gpr <- data_gpr_export %>%
+  mutate(year = year(month)) %>%
+  group_by(year) %>%
+  summarise(
+    across(
+      where(is.numeric),
+      ~ mean(.x, na.rm = TRUE)
+    )
+  )
+
+data_gpr <- data_gpr %>%
+  filter(year >= 1985)
+
+# ======================================================
+# Ajuste na base de dados para incluir peso geográfico -
+# ======================================================
+
+#Ajusta a base do GPR para contar apenas com os dados anuais e cria um indicador
+#específico para a exposição de cada país aos risco geopolítico dos países mais
+#próximos. Faz isso com base nos dados de distância geográfica do CEPII, dando 
+#peso maior ao risco geopolítico de países mais próximos.
+
+#Baixa os dados da CEPII. O pacote CEPII tem apenas duas funções dist_cepii 
+#e geo_cepii para puxar os dados. geo_cepii tem dados do tipo dummies culturais,
+#políticos e históricos para os países da base.
+dist <- dist_cepii
+
+#Código para listar apenas os países da base de dados do GPR index
+GPR_countries <- c(
+  # North America
+  "CAN", "MEX", "USA",
+  
+  # South America
+  "ARG", "BRA", "CHL", "COL", "PER", "VEN",
+  
+  # Europe (North and East)
+  "DNK", "FIN", "HUN", "NOR", "POL",
+  "RUS", "SWE", "UKR", "GBR",
+  
+  # Europe (South and West)
+  "BEL", "FRA", "DEU", "ITA",
+  "NLD", "PRT", "ESP", "CHE",
+  
+  # Middle East and Africa
+  "EGY", "ISR", "SAU", "ZAF",
+  "TUN", "TUR",
+  
+  # Asia and Oceania
+  "AUS", "CHN", "HKG", "JPN",
+  "KOR", "PHL", "TWN", "IDN",
+  "IND", "MYS", "THA", "VNM"
+)
+
+#Ficar apenas com os países da base do GPR na base do CEPII como origem
+#e retira a distância do país consigo mesmo
+
+dist <- dist %>%
+  filter(
+    iso_o %in% GPR_countries,
+    #iso_d %in% GPR_countries, usar esse filtro caso queira deixar também apenas como destino, o que aumenta muito o peso de países mais perto
+    iso_o != iso_d
+    )
+
+#Cria pesos para cada parceiro bilateral. Países mais perto têm peso maior
+
+dist <- dist %>%
+  group_by(iso_o) %>%
+  mutate(
+    weight_dist = 1 / dist,
+    weight_dist = weight_dist / sum(weight_dist, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+library(dplyr)
+library(tidyr)
+library(stringr)
+
+#Transformar GPRC em formato longo
+gpr_long <- data_gpr %>%
+  mutate(id = row_number()) %>%
+  pivot_longer(
+    cols = starts_with("GPRC_"),
+    names_to = "iso_d",
+    names_prefix = "GPRC_",
+    values_to = "GPRC"
+  )
+
+#Juntar com pesos de distância
+gpr_weighted <- gpr_long %>%
+  left_join(
+    dist %>%
+      select(iso_o, iso_d, weight_dist),
+    by = "iso_d"
+  )
+
+#Calcular contribuição ponderada
+gpr_weighted <- gpr_weighted %>%
+  mutate(
+    weighted_GPRC = GPRC * weight_dist
+  )
+
+#Somar para cada país de origem e período
+geo_exposure <- gpr_weighted %>%
+  group_by(year, iso_o) %>%
+  summarise(
+    geo_exposure = sum(weighted_GPRC, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+#Voltar para wide
+geo_exposure_wide <- geo_exposure %>%
+  pivot_wider(
+    names_from = iso_o,
+    values_from = geo_exposure,
+    names_prefix = "GEOEXP_"
+  )
+
+#Juntar de volta na base original
+data_gpr <- data_gpr %>%
+  left_join(
+    geo_exposure_wide,
+    by = "year"
+  )
+
+#Comparação visual de como estão variando o indicador global (GPR), o indicador
+#do país (GPRC_XXX) e o indicador da exposição aos demais países por proximidade
+#geográfica (GEOEXP_XXX)
+
+plot_data <- data_gpr %>%
+  select(year, GPR, GPRC_CHN, GEOEXP_CHN) %>%
+  mutate(across(-year, scale)) %>%
+  pivot_longer(
+    cols = -year,
+    names_to = "serie",
+    values_to = "valor"
+  )
+
+ggplot(plot_data, aes(year, valor, color = serie)) +
+  geom_line(size = 1.2) +
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "Séries padronizadas (z-score)",
+    x = "Ano",
+    y = "Desvio-padrão",
+    color = "Série"
+  )
+
+# ===========================================
+# Série temporal América Latina e BRICS+ ----
+# ===========================================
 
 # Criar pasta "plots" se não existir
 dir.create("plots", showWarnings = FALSE)
-
-# ===========================================
-# Série temporal América Latina e BRIC+ ----
-# ===========================================
 
 #Extrai apenas os países da América Latina e cria observações "data-país" e retira
 #as linhas vazias (dados disponíveis apenas a partir de 1990)

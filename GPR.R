@@ -18,6 +18,7 @@ if (!require(reshape2)) install.packages("reshape2")
 if (!require(cepiigeodist)) install.packages("cepiigeodist")
 if (!require(lubridate)) install.packages("lubridate")
 if (!require(stringr)) install.packages("stringr")
+if (!require(imfapi)) install.packages("imfapi")
 
 library(readxl)
 library(dplyr)
@@ -27,6 +28,7 @@ library(reshape2)
 library(cepiigeodist)
 library(lubridate)
 library(stringr)
+library(imfapi)
 
 # =========================
 # Download ----
@@ -123,7 +125,7 @@ GPR_countries <- c(
   
   # Europe (North and East)
   "DNK", "FIN", "HUN", "NOR", "POL",
-  "RUS", "SWE", "UKR", "GBR",
+  "RUS", "SWE", "UKR", "GBR", "SUN", #SUN é necessário para ter os dados da Rússia na época da URSS
   
   # Europe (South and West)
   "BEL", "FRA", "DEU", "ITA",
@@ -159,14 +161,9 @@ dist <- dist %>%
   ) %>%
   ungroup()
 
-library(dplyr)
-library(tidyr)
-library(stringr)
-
 #Transformar GPRC em formato longo
 gpr_long <- data_gpr %>%
-  mutate(id = row_number()) %>%
-  pivot_longer(
+    pivot_longer(
     cols = starts_with("GPRC_"),
     names_to = "iso_d",
     names_prefix = "GPRC_",
@@ -174,7 +171,7 @@ gpr_long <- data_gpr %>%
   )
 
 #Juntar com pesos de distância
-gpr_weighted <- gpr_long %>%
+gpr_geo_weighted <- gpr_long %>%
   left_join(
     dist %>%
       select(iso_o, iso_d, weight_dist),
@@ -182,16 +179,16 @@ gpr_weighted <- gpr_long %>%
   )
 
 #Calcular contribuição ponderada
-gpr_weighted <- gpr_weighted %>%
+gpr_geo_weighted <- gpr_geo_weighted %>%
   mutate(
-    weighted_GPRC = GPRC * weight_dist
+    geo_weighted_GPRC = GPRC * weight_dist
   )
 
 #Somar para cada país de origem e período
-geo_exposure <- gpr_weighted %>%
+geo_exposure <- gpr_geo_weighted %>%
   group_by(year, iso_o) %>%
   summarise(
-    geo_exposure = sum(weighted_GPRC, na.rm = TRUE),
+    geo_exposure = sum(geo_weighted_GPRC, na.rm = TRUE),
     .groups = "drop"
   )
 
@@ -203,8 +200,8 @@ geo_exposure_wide <- geo_exposure %>%
     names_prefix = "GEOEXP_"
   )
 
-#Juntar de volta na base original
-data_gpr <- data_gpr %>%
+#Juntar de volta na base específica para GPR com peso geográfico
+data_gpr_geo <- data_gpr %>%
   left_join(
     geo_exposure_wide,
     by = "year"
@@ -214,8 +211,186 @@ data_gpr <- data_gpr %>%
 #do país (GPRC_XXX) e o indicador da exposição aos demais países por proximidade
 #geográfica (GEOEXP_XXX)
 
-plot_data <- data_gpr %>%
+plot_data <- data_gpr_geo %>%
   select(year, GPR, GPRC_CHN, GEOEXP_CHN) %>%
+  mutate(across(-year, scale)) %>%
+  pivot_longer(
+    cols = -year,
+    names_to = "serie",
+    values_to = "valor"
+  )
+
+ggplot(plot_data, aes(year, valor, color = serie)) +
+  geom_line(size = 1.2) +
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "Séries padronizadas (z-score)",
+    x = "Ano",
+    y = "Desvio-padrão",
+    color = "Série"
+  )
+
+# ======================================================
+# Ajuste na base de dados para incluir peso comercial  -
+# ======================================================
+
+#Pegando os dados de comércio da base de dados do FMI com o pacto imfapi. Como
+#trava ao tentar baixar todos os dados de uma vez só, vamos baixar apenas os 
+#dados dos países da base de dados do GPR (lista criada acima dos GPR_countries)
+#primeiro as importações, depois as exportações e juntar tudo a partir do ano
+#em que há dados do indicador GPR (não estamos usando o indicador GPR histórico). 
+
+#Dados de importação
+data_trade_M <- imf_get(
+  dataflow_id = "IMTS",
+  dimensions = list(
+    COUNTRY = GPR_countries,
+    INDICATOR = "MG_CIF_USD",
+    FREQUENCY = "A"),
+  max_tries = 10000L
+)
+
+#Dados de exportação
+data_trade_X <- imf_get(
+  dataflow_id = "IMTS",
+  dimensions = list(
+    COUNTRY = GPR_countries,
+    INDICATOR = "XG_FOB_USD",
+    FREQUENCY = "A"),
+  max_tries = 10000L
+)
+
+#Juntando os dois para obter a corrente de comércio (X+M)
+data_trade <- bind_rows(data_trade_M, data_trade_X) %>%
+  filter(as.numeric(TIME_PERIOD) >= 1985) %>%
+  group_by(COUNTRY, COUNTERPART_COUNTRY, TIME_PERIOD) %>%
+  summarise(
+    total_trade = sum(OBS_VALUE, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+#Nos dados do FMI, há em COUNTERPART_COUNTRIES vários agregados e lista histórica
+#de países. Os agregados serão retirados e, por simplicidade, será considerado o
+#comércio da URSS (SUN) - 1985-92 - como Rússia (RUS) - 1993 em diante. Nenhum 
+#outro país/território histórico e seu sucessor constam da base individual do GPR, 
+#de modo que não terá diferença na hora de calcular os GPRC ponderado para comércio.
+
+#Retirar agregados
+
+aggregates <- c(
+  "G001","G080","G092","G110","G163","G200","G205",
+  "G400","G505","G603","G903","G998",
+  "GX170","GX405","GX440","GX605","GX901",
+  "TX126","TX399","TX489","TX598","TX799",
+  "TX884","TX898","TX899","TX910"
+)
+
+data_trade <- data_trade %>%
+  filter(!COUNTERPART_COUNTRY %in% aggregates)
+
+#Substituindo União Soviética (SUN) por Rússia (RUS)
+
+data_trade <- data_trade %>%
+  mutate(
+    COUNTRY = if_else(COUNTRY == "SUN", "RUS", COUNTRY),
+    COUNTERPART_COUNTRY = if_else(COUNTERPART_COUNTRY == "SUN", "RUS", COUNTERPART_COUNTRY)
+  )
+
+#Criando pesos para o comércio bilateral
+data_trade <- data_trade %>%
+  group_by(COUNTRY, TIME_PERIOD) %>%
+  mutate(
+    trade_share = total_trade / sum(total_trade, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+#Taiwan não está incluído nos dados de comércio do FMI como país reportante, apenas
+#como país reportado. Para isso, se for para incluir Taiwan entre os países com
+#GPRC de exposição comercial calculado é preciso obter os dados para Taiwan de outras 
+#fontes e acrescentar à base de dados de pesos bilaterais. TENTEI COM WDI E LÁ
+#NÃO TEM TAIWAN TAMBÉM. OMC TEM TAIPEI NO PORTAL DE ESTATÍSTICAS, MAS NÃO ENCONTREI
+#COMO BAIXAR OS DADOS DE COMÉRCIO BIALTERAL PARA TAIWAN LÁ, APENAS VISUALIZAR. POR ORA, PRIMEIRO TESTE COM OS DADOS SEM TAIWAN
+#BÉLGICA TEM DADOS APENAS A PARTIR DE 1997 NA BASE DE COMÉRCIO. POR ORA, PRIMEIRO TESTE COM DADOS SEM AJUSTE DESSA PARTE
+
+#Aplicando os pesos do comércio bilateral para calcular o GPR ponderado pela
+#exposição ao comércio
+
+#Transformar GPRC em formato longo
+gpr_long <- data_gpr %>%
+    pivot_longer(
+    cols = starts_with("GPRC_"),
+    names_to = "iso_d",
+    names_prefix = "GPRC_",
+    values_to = "GPRC"
+  )
+
+#Preparar a base de dados dos pesos de comércio para juntar com a outra
+trade_weights <- data_trade %>%
+  transmute(
+    iso_o = COUNTRY,
+    iso_d = COUNTERPART_COUNTRY,
+    year = as.numeric(TIME_PERIOD),
+    trade_share
+  )
+
+#Incluir coluna referente ao país de interesse em relação aos demais parceiros
+countries <- unique(trade_weights$iso_o)
+gpr_long <- gpr_long %>%
+  tidyr::crossing(iso_o = countries) %>%
+  filter(iso_o != iso_d)
+
+#Juntar as duas bases de dados
+gpr_trade_weighted <- gpr_long %>%
+  left_join(
+    trade_weights,
+    by = c("iso_o", "iso_d", "year")
+  )
+
+#Calcular contribuição ponderada
+gpr_trade_weighted <- gpr_trade_weighted %>%
+    mutate(
+    trade_weighted_GPRC = GPRC * trade_share
+  )
+
+#Somar para cada país de origem e período
+trade_exposure <- gpr_trade_weighted %>%
+  group_by(year, iso_o) %>%
+  summarise(
+    trade_exposure = sum(trade_weighted_GPRC, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+#TESTES E CHECAGENS COM AS BASES. PODE SER NECESSÁRIO VOLTAR AQUI DEPOIS E FAZER
+#TESTES DE ROBUSTEZ PARA VERIFICAR SE OS DADOS NORMALIZADOS SERIAM NECESSÁRIOS,
+#UMA VEZ QUE O INDICADOR COM PESO PODE ESTAR DANDO MUITO MAIS PESO PARA PAÍSES
+#COM DADOS MELHORES DE COMÉRCIO AOS QUE, POR ACASO, TEM DADOS INDIVIDUAIS NO GPRC
+#I.E. UM VIÉS PARA PAÍSES QUE TROCAM MAIS COM PAÍSES COM MELHORES DADOS OU MAIS 
+#IMPORTANTES (O QUE JÁ SE OBSERVARIA NA PRÁTICA DE QQ FORMA) E HÁ MUITO RUÍDO E 
+#DADOS FALATANDO ANTES DE 1997 PARA PAÍSES COMO BÉLGICA, ÁFRICA DO SUL E UCRÂNIA
+#ALÉM DA QUESTÃO DE TAIWAN FALTANDO COMO REPORTING
+
+#Voltar para wide
+trade_exposure_wide <-  trade_exposure %>%
+  pivot_wider(
+    names_from = iso_o,
+    values_from = trade_exposure,
+    names_prefix = "GPRC_TRADE_"
+  )
+
+#Juntar com a base mais geral
+data_gpr_trade <- data_gpr %>%
+  left_join(
+    trade_exposure_wide,
+    by = "year"
+  )
+
+#Comparação visual de como estão variando o indicador global (GPR), o indicador
+#do país (GPRC_XXX) e o indicador da exposição aos demais países por proximidade
+#geográfica (TRADE_XXX)
+
+plot_data <- data_gpr_trade %>%
+  filter(year < 2026) %>%
+  select(year, GPR, GPRC_TRADE_BRA, GPRC_TRADE_ARG, GPRC_TRADE_COL) %>%
   mutate(across(-year, scale)) %>%
   pivot_longer(
     cols = -year,
@@ -472,3 +647,4 @@ ggplot(df_brics_sync, aes(x = month, y = n_shocks)) +
   theme_minimal() +
   labs(title = "Number of countries in extreme shock",
        y = "Count")
+       

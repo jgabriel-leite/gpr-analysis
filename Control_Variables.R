@@ -73,7 +73,7 @@ inflation <- imf_get(
 
 #Ficar apenas com os dados para 1985 em diante
 inflation <- inflation %>%
-  filter(TIME_PERIOD >= 1985)
+  filter(TIME_PERIOD >= 1985 & TIME_PERIOD <= 2025)
 
 #Ficar apenas com as variáveis de interesse e no mesmo formato da base para regressão
 
@@ -109,7 +109,7 @@ reer <- imf_get(
 
 #Ficar apenas com os dados para 1985 em diante
 reer <- reer %>%
-  filter(TIME_PERIOD >= 1985)
+  filter(TIME_PERIOD >= 1985 & TIME_PERIOD <= 2025)
 
 #Ficar apenas com as variáveis de interesse e no mesmo formato da base para regressão
 
@@ -158,7 +158,7 @@ interest <- imf_get(
 
 #Ficar apenas com os dados para 1985 em diante
 interest <- interest %>%
-  filter(TIME_PERIOD >= 1985)
+  filter(TIME_PERIOD >= 1985 & TIME_PERIOD <= 2025)
 
 #Ficar apenas com as variáveis de interesse e no mesmo formato da base para regressão
 interest <- interest %>%
@@ -212,7 +212,7 @@ output_gap <- imf_get(
 
 #Ficar apenas com os dados para 1985 em diante
 output_gap <- output_gap %>%
-  filter(TIME_PERIOD >= 1985)
+  filter(TIME_PERIOD >= 1985 & TIME_PERIOD <= 2025)
 
 #Ficar apenas com as variáveis de interesse e no mesmo formato da base para regressão
 output_gap <- output_gap %>%
@@ -276,7 +276,7 @@ debt <- imf_get(
 
 #Ficar apenas com os dados para 1985 em diante
 debt <- debt %>%
-  filter(TIME_PERIOD >= 1985)
+  filter(TIME_PERIOD >= 1985 & TIME_PERIOD <= 2025)
 
 #Ficar apenas com as variáveis de interesse e no mesmo formato da base para regressão
 debt <- debt %>%

@@ -212,6 +212,11 @@ data_gpr_geo <- data_gpr %>%
 #ponderado na mesma base para comparação ou manipulação conjunta, caso necessário.
 #O arquivo a ser usado na regressão será salvo em data-raw.
 
+geo_exposure <- geo_exposure %>%
+  rename(
+    country = iso_o
+  )
+
 write.csv(geo_exposure, "data-raw/geo_exposure.csv", row.names = FALSE)
 
 #Comparação visual de como estão variando o indicador global (GPR), o indicador
@@ -395,6 +400,11 @@ data_gpr_trade <- data_gpr %>%
 #por relação comercial. O data_gpr_trade serve para ter os dados do indicador
 #ponderado na mesma base para comparação ou manipulação conjunta, caso necessário.
 #O arquivo a ser usado na regressão será salvo em data-raw.
+
+trade_exposure <- trade_exposure %>%
+  rename(
+    country = iso_o
+  )
 
 write.csv(trade_exposure, "data-raw/trade_exposure.csv")
 

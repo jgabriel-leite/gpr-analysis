@@ -4,9 +4,9 @@
 
 #Código para baixar os dados do Geopolitical Risk Indes e criar um indicador de 
 #exposição geopolítica para cada país com base na proximidade geográfica de cada
-#parceiro bilateral. Também conta com códigos para plotar alguns gráficos
-#explorando a correlação entre esse índice para os países da América Latina e
-#do BRICS+ com dados disponíveis nessa base.
+#parceiro bilateral e outro com base nos peso dos parceiros comerciais. 
+#Também conta com códigos para plotar alguns gráficos explorando a correlação 
+#entre esse índice para os países da América Latina e do BRICS+ com dados disponíveis nessa base.
 
 #Baixa e lê os pacotes necessários
 

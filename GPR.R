@@ -207,6 +207,13 @@ data_gpr_geo <- data_gpr %>%
     by = "year"
   )
 
+#geo_exposure é a base de dados que será usada para a regressão com o GPR ponderado
+#por proximidade geográfica. O data_gpr_geo serve para ter os dados do indicador
+#ponderado na mesma base para comparação ou manipulação conjunta, caso necessário.
+#O arquivo a ser usado na regressão será salvo em data-raw.
+
+write.csv(geo_exposure, "data-raw/geo_exposure.csv", row.names = FALSE)
+
 #Comparação visual de como estão variando o indicador global (GPR), o indicador
 #do país (GPRC_XXX) e o indicador da exposição aos demais países por proximidade
 #geográfica (GEOEXP_XXX)
@@ -383,6 +390,13 @@ data_gpr_trade <- data_gpr %>%
     trade_exposure_wide,
     by = "year"
   )
+
+#trade_exposure é a base de dados que será usada para a regressão com o GPR ponderado
+#por relação comercial. O data_gpr_trade serve para ter os dados do indicador
+#ponderado na mesma base para comparação ou manipulação conjunta, caso necessário.
+#O arquivo a ser usado na regressão será salvo em data-raw.
+
+write.csv(trade_exposure, "data-raw/trade_exposure.csv")
 
 #Comparação visual de como estão variando o indicador global (GPR), o indicador
 #do país (GPRC_XXX) e o indicador da exposição aos demais países por proximidade

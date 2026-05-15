@@ -4,28 +4,29 @@
 
 #Código para baixar e colocar no formato para ser usado na regressão as variáveis
 #controle. As variáveis são as seguintes:
-#STOCK PRICE VOLATILITY INDICATOR - Fonte: Banco Mundial ou Bloomberg?
+# Volatilidade do mercado de ações - Fonte: Banco Mundial com o pacote WDI [ou Bloomberg?]
+#         Taxa usada para verificar cobertura: GFDD.SM.01 - Stock price volatility AINDA PRECISA CHECAR NA BLOOMBERG
 # Taxa de inflação - Fonte: FMI com o pacote imfapi
 # Taxa de câmbio real efetiva - Fonte: FMI com o pacote imfapi
 # Taxa de juros - Fonte: FMI com o pacote imfapi
 #         Taxa usada: MFS166_RT_PT_A_PT - Monetary policy-related, Rate, Percent per annum
-#Output gap - Fonte: FMI com o pacote imfapi
+# Output gap - Fonte: FMI com o pacote imfapi
 #         Indicador usado: NGAP_NPGDP - Output gap, Percent of potential GDP
 #Rating de crédito "quantificado" (AINDA SEM DECIDIR QUAL/COMO USAR)
-#Relação dívida-PIB para governo geral - Fonte: FMI com o pacote imfapi
+# Relação dívida-PIB para governo geral - Fonte: FMI com o pacote imfapi
 #         Indicador usado: GGXWDG_NGDP - Gross debt, General government, Percent of GDP
+###ACRESCENTAR POSTERIORMENTE A DATA DE CRESCIMENTO REAL DO PIB PARA OS PAÍSES DA BASE
+###E TAMBÉM O RESULTADO DA BALANÇA COMERCIAL
 
 #Baixa e lê os pacotes necessários
 if (!require(dplyr)) install.packages("dplyr")
 if (!require(tidyr)) install.packages("tidyr")
-if (!require(tidyverse)) install.packages("tidyverse")
 if (!require(imfapi)) install.packages("imfapi")
 if (!require(WDI)) install.packages("WDI")
 
 
 library(dplyr)
 library(tidyr)
-library(tidyverse)
 library(imfapi)
 library(WDI)
 
@@ -54,6 +55,34 @@ GPR_countries <- c(
   "KOR", "PHL", "TWN", "IDN",
   "IND", "MYS", "THA", "VNM"
 )
+
+# =====================================
+# Volatilidade do mercado de ações ----
+# =====================================
+
+#Puxar os dados para os países da base
+volatility <- WDI(
+  country = GPR_countries,
+  indicator = "GFDD.SM.01",
+  start = 1985
+  
+)
+
+volatility <- volatility %>%
+  select(iso3c, year, GFDD.SM.01) %>%
+  rename(
+    country = iso3c,
+    year = year,
+    volatility = GFDD.SM.01
+  )
+
+#Checar os países que não estão na base
+setdiff(GPR_countries, unique(volatility$country))
+
+#NESSE BASE DE DADOS NÃO HÁ REGISTROS PARA TAIWAN E NEM PARA UNIÃO SOVIÉTICA
+
+##O arquivo a ser usado na regressão será salvo em data-raw.
+write.csv(volatility, "data-raw/volatility.csv")
 
 # =========================
 # Taxa de inflação ----
